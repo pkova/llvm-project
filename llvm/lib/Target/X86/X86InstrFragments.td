@@ -352,6 +352,10 @@ def X86eh_sjlj_setjmp  : SDNode<"X86ISD::EH_SJLJ_SETJMP",
                                 SDTypeProfile<1, 1, [SDTCisInt<0>,
                                                      SDTCisPtrTy<1>]>,
                                 [SDNPHasChain, SDNPSideEffect]>;
+def X86setjmp          : SDNode<"X86ISD::SETJMP",
+                                SDTypeProfile<1, 1, [SDTCisInt<0>,
+                                                     SDTCisPtrTy<1>]>,
+                                [SDNPHasChain, SDNPSideEffect]>;
 
 // SjLj exception handling longjmp.
 def X86eh_sjlj_longjmp : SDNode<"X86ISD::EH_SJLJ_LONGJMP",

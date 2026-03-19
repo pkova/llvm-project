@@ -1920,8 +1920,10 @@ let mayLoad = 1, mayStore = 1, Defs = [CC] in {
 //--------------------------------------------------------------------------
 let isBarrier = 1,  hasNoSchedulingInfo = 1 in {
   let hasSideEffects = 1, usesCustomInserter = 1 in {
-    def EH_SjLj_SetJmp : Pseudo<(outs GR32:$dst), (ins ADDR64:$R2), 
+    def EH_SjLj_SetJmp : Pseudo<(outs GR32:$dst), (ins ADDR64:$R2),
                         [(set GR32:$dst, (z_eh_sjlj_setjmp ADDR64:$R2))]>;
+    def SetJmp : Pseudo<(outs GR32:$dst), (ins ADDR64:$R2),
+                        [(set GR32:$dst, (z_setjmp ADDR64:$R2))]>;
     let isTerminator = 1 in {
       def EH_SjLj_LongJmp : Pseudo<(outs), (ins ADDR64:$R2), 
                            [(z_eh_sjlj_longjmp  ADDR64:$R2)]>;

@@ -6863,6 +6863,16 @@ void SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I,
     MFI.setFunctionContextIndex(FI);
     return;
   }
+  case Intrinsic::setjmp: {
+    SDValue Ops[2];
+    Ops[0] = getRoot();
+    Ops[1] = getValue(I.getArgOperand(0));
+    SDValue Op =
+        DAG.getNode(ISD::SETJMP, sdl, DAG.getVTList(MVT::i32, MVT::Other), Ops);
+    setValue(&I, Op.getValue(0));
+    DAG.setRoot(Op.getValue(1));
+    return;
+  }
   case Intrinsic::eh_sjlj_setjmp: {
     SDValue Ops[2];
     Ops[0] = getRoot();

@@ -214,6 +214,14 @@ let hasSideEffects = 1, isBarrier = 1, isCodeGenOnly = 1,
                             "#EH_SJLJ_SETJMP64",
                             [(set GR32:$dst, (X86eh_sjlj_setjmp addr:$buf))]>,
                           Requires<[In64BitMode]>;
+  def SetJmp32  : I<0, Pseudo, (outs GR32:$dst), (ins i32mem:$buf),
+                    "#SETJMP32",
+                    [(set GR32:$dst, (X86setjmp addr:$buf))]>,
+                  Requires<[Not64BitMode]>;
+  def SetJmp64  : I<0, Pseudo, (outs GR32:$dst), (ins i64mem:$buf),
+                    "#SETJMP64",
+                    [(set GR32:$dst, (X86setjmp addr:$buf))]>,
+                  Requires<[In64BitMode]>;
   let isTerminator = 1 in {
   def EH_SjLj_LongJmp32 : I<0, Pseudo, (outs), (ins i32mem:$buf),
                             "#EH_SJLJ_LONGJMP32",

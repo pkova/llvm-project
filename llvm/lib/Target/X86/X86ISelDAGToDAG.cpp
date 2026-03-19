@@ -3030,11 +3030,12 @@ bool X86DAGToDAGISel::selectAddr(SDNode *Parent, SDValue N, SDValue &Base,
       // This list of opcodes are all the nodes that have an "addr:$ptr" operand
       // that are not a MemSDNode, and thus don't have proper addrspace info.
       Parent->getOpcode() != ISD::INTRINSIC_W_CHAIN && // unaligned loads, fixme
-      Parent->getOpcode() != ISD::INTRINSIC_VOID && // nontemporal stores
-      Parent->getOpcode() != X86ISD::TLSCALL && // Fixme
-      Parent->getOpcode() != X86ISD::ENQCMD && // Fixme
-      Parent->getOpcode() != X86ISD::ENQCMDS && // Fixme
+      Parent->getOpcode() != ISD::INTRINSIC_VOID &&    // nontemporal stores
+      Parent->getOpcode() != X86ISD::TLSCALL &&        // Fixme
+      Parent->getOpcode() != X86ISD::ENQCMD &&         // Fixme
+      Parent->getOpcode() != X86ISD::ENQCMDS &&        // Fixme
       Parent->getOpcode() != X86ISD::EH_SJLJ_SETJMP && // setjmp
+      Parent->getOpcode() != X86ISD::SETJMP &&         // setjmp
       Parent->getOpcode() != X86ISD::EH_SJLJ_LONGJMP) { // longjmp
     unsigned AddrSpace =
       cast<MemSDNode>(Parent)->getPointerInfo().getAddrSpace();

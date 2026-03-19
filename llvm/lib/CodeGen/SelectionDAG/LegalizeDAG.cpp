@@ -1116,6 +1116,7 @@ void SelectionDAGLegalize::LegalizeOp(SDNode *Node) {
   case ISD::FRAME_TO_ARGS_OFFSET:
   case ISD::EH_DWARF_CFA:
   case ISD::EH_SJLJ_SETJMP:
+  case ISD::SETJMP:
   case ISD::EH_SJLJ_LONGJMP:
   case ISD::EH_SJLJ_SETUP_DISPATCH:
     // These operations lie about being legal: when they claim to be legal,
@@ -3311,6 +3312,7 @@ bool SelectionDAGLegalize::ExpandNode(SDNode *Node) {
     Results.push_back(Node->getOperand(0));
     break;
   case ISD::EH_SJLJ_SETJMP:
+  case ISD::SETJMP:
     // If the target didn't expand this, just return 'zero' and preserve the
     // chain.
     Results.push_back(DAG.getConstant(0, dl, MVT::i32));

@@ -190,6 +190,7 @@ public:
   SDValue lowerEH_SJLJ_LONGJMP(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerEH_SJLJ_SETJMP(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerEH_SJLJ_SETUP_DISPATCH(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerSETJMP(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerGlobalTLSAddress(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG) const;
@@ -219,6 +220,7 @@ public:
                                        MachineBasicBlock *MBB) const;
   MachineBasicBlock *emitEHSjLjSetJmp(MachineInstr &MI,
                                       MachineBasicBlock *MBB) const;
+  MachineBasicBlock *emitSetJmp(MachineInstr &MI, MachineBasicBlock *MBB) const;
   MachineBasicBlock *emitSjLjDispatchBlock(MachineInstr &MI,
                                            MachineBasicBlock *BB) const;
 

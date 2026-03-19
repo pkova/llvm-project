@@ -510,6 +510,7 @@ X86TargetLowering::X86TargetLowering(const X86TargetMachine &TM,
   // NOTE: EH_SJLJ_SETJMP/_LONGJMP are not recommended, since
   // LLVM/Clang supports zero-cost DWARF and SEH exception handling.
   setOperationAction(ISD::EH_SJLJ_SETJMP, MVT::i32, Custom);
+  setOperationAction(ISD::SETJMP, MVT::i32, Custom);
   setOperationAction(ISD::EH_SJLJ_LONGJMP, MVT::Other, Custom);
   setOperationAction(ISD::EH_SJLJ_SETUP_DISPATCH, MVT::Other, Custom);
 
@@ -28913,6 +28914,16 @@ SDValue X86TargetLowering::lowerEH_SJLJ_SETJMP(SDValue Op,
                      Op.getOperand(0), Op.getOperand(1));
 }
 
+SDValue X86TargetLowering::lowerSETJMP(SDValue Op, SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  if (!Subtarget.is64Bit()) {
+    const X86InstrInfo *TII = Subtarget.getInstrInfo();
+    (void)TII->getGlobalBaseReg(&DAG.getMachineFunction());
+  }
+  return DAG.getNode(X86ISD::SETJMP, DL, DAG.getVTList(MVT::i32, MVT::Other),
+                     Op.getOperand(0), Op.getOperand(1));
+}
+
 SDValue X86TargetLowering::lowerEH_SJLJ_LONGJMP(SDValue Op,
                                                 SelectionDAG &DAG) const {
   SDLoc DL(Op);
@@ -34209,6 +34220,7 @@ SDValue X86TargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::DYNAMIC_STACKALLOC: return LowerDYNAMIC_STACKALLOC(Op, DAG);
   case ISD::EH_RETURN:          return LowerEH_RETURN(Op, DAG);
   case ISD::EH_SJLJ_SETJMP:     return lowerEH_SJLJ_SETJMP(Op, DAG);
+  case ISD::SETJMP:             return lowerSETJMP(Op, DAG);
   case ISD::EH_SJLJ_LONGJMP:    return lowerEH_SJLJ_LONGJMP(Op, DAG);
   case ISD::EH_SJLJ_SETUP_DISPATCH:
     return lowerEH_SJLJ_SETUP_DISPATCH(Op, DAG);
@@ -37578,6 +37590,8 @@ X86TargetLowering::emitEHSjLjSetJmp(MachineInstr &MI,
     MIB.addMBB(restoreMBB);
   MIB.setMemRefs(MMOs);
 
+  const X86RegisterInfo *RegInfo = Subtarget.getRegisterInfo();
+
   if (MF->getFunction().getParent()->getModuleFlag("cf-protection-return")) {
     emitSetJmpShadowStackFix(MI, thisMBB);
   }
@@ -37586,7 +37600,6 @@ X86TargetLowering::emitEHSjLjSetJmp(MachineInstr &MI,
   MIB = BuildMI(*thisMBB, MI, MIMD, TII->get(X86::EH_SjLj_Setup))
           .addMBB(restoreMBB);
 
-  const X86RegisterInfo *RegInfo = Subtarget.getRegisterInfo();
   MIB.addRegMask(RegInfo->getNoPreservedMask());
   thisMBB->addSuccessor(mainMBB);
   thisMBB->addSuccessor(restoreMBB);
@@ -37614,6 +37627,164 @@ X86TargetLowering::emitEHSjLjSetJmp(MachineInstr &MI,
     addRegOffset(BuildMI(restoreMBB, MIMD, TII->get(Opm), BasePtr),
                  FramePtr, true, X86FI->getRestoreBasePointerOffset())
       .setMIFlag(MachineInstr::FrameSetup);
+  }
+  BuildMI(restoreMBB, MIMD, TII->get(X86::MOV32ri), restoreDstReg).addImm(1);
+  BuildMI(restoreMBB, MIMD, TII->get(X86::JMP_1)).addMBB(sinkMBB);
+  restoreMBB->addSuccessor(sinkMBB);
+
+  MI.eraseFromParent();
+  return sinkMBB;
+}
+
+// Expand @llvm.setjmp pseudo. Like emitEHSjLjSetJmp but the backend is
+// responsible for storing FP and SP into the buffer (the frontend does not
+// emit @llvm.frameaddress / @llvm.stacksave stores).
+MachineBasicBlock *X86TargetLowering::emitSetJmp(MachineInstr &MI,
+                                                 MachineBasicBlock *MBB) const {
+  const MIMetadata MIMD(MI);
+  MachineFunction *MF = MBB->getParent();
+  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
+  const TargetRegisterInfo *TRI = Subtarget.getRegisterInfo();
+  MachineRegisterInfo &MRI = MF->getRegInfo();
+
+  const BasicBlock *BB = MBB->getBasicBlock();
+  MachineFunction::iterator I = ++MBB->getIterator();
+
+  SmallVector<MachineMemOperand *, 2> MMOs(MI.memoperands());
+
+  unsigned MemOpndSlot = 0;
+  unsigned CurOp = 0;
+
+  Register DstReg = MI.getOperand(CurOp++).getReg();
+  const TargetRegisterClass *RC = MRI.getRegClass(DstReg);
+  assert(TRI->isTypeLegalForClass(*RC, MVT::i32) && "Invalid destination!");
+  (void)TRI;
+  Register mainDstReg = MRI.createVirtualRegister(RC);
+  Register restoreDstReg = MRI.createVirtualRegister(RC);
+
+  MemOpndSlot = CurOp;
+
+  MVT PVT = getPointerTy(MF->getDataLayout());
+  assert((PVT == MVT::i64 || PVT == MVT::i32) && "Invalid Pointer Size!");
+
+  MachineBasicBlock *thisMBB = MBB;
+  MachineBasicBlock *mainMBB = MF->CreateMachineBasicBlock(BB);
+  MachineBasicBlock *sinkMBB = MF->CreateMachineBasicBlock(BB);
+  MachineBasicBlock *restoreMBB = MF->CreateMachineBasicBlock(BB);
+  MF->insert(I, mainMBB);
+  MF->insert(I, sinkMBB);
+  MF->push_back(restoreMBB);
+  restoreMBB->setMachineBlockAddressTaken();
+
+  MachineInstrBuilder MIB;
+
+  sinkMBB->splice(sinkMBB->begin(), MBB,
+                  std::next(MachineBasicBlock::iterator(MI)), MBB->end());
+  sinkMBB->transferSuccessorsAndUpdatePHIs(MBB);
+
+  // thisMBB:
+  unsigned PtrStoreOpc = 0;
+  Register LabelReg;
+  const int64_t LabelOffset = 1 * PVT.getStoreSize();
+  bool UseImmLabel = (MF->getTarget().getCodeModel() == CodeModel::Small) &&
+                     !isPositionIndependent();
+
+  // Prepare IP either in reg or imm.
+  if (!UseImmLabel) {
+    PtrStoreOpc = (PVT == MVT::i64) ? X86::MOV64mr : X86::MOV32mr;
+    const TargetRegisterClass *PtrRC = getRegClassFor(PVT);
+    LabelReg = MRI.createVirtualRegister(PtrRC);
+    if (Subtarget.is64Bit()) {
+      MIB = BuildMI(*thisMBB, MI, MIMD, TII->get(X86::LEA64r), LabelReg)
+                .addReg(X86::RIP)
+                .addImm(0)
+                .addReg(0)
+                .addMBB(restoreMBB)
+                .addReg(0);
+    } else {
+      const X86InstrInfo *XII = static_cast<const X86InstrInfo *>(TII);
+      MIB = BuildMI(*thisMBB, MI, MIMD, TII->get(X86::LEA32r), LabelReg)
+                .addReg(XII->getGlobalBaseReg(MF))
+                .addImm(0)
+                .addReg(0)
+                .addMBB(restoreMBB, Subtarget.classifyBlockAddressReference())
+                .addReg(0);
+    }
+  } else
+    PtrStoreOpc = (PVT == MVT::i64) ? X86::MOV64mi32 : X86::MOV32mi;
+
+  // Store IP to buf[1].
+  MIB = BuildMI(*thisMBB, MI, MIMD, TII->get(PtrStoreOpc));
+  for (unsigned i = 0; i < X86::AddrNumOperands; ++i) {
+    if (i == X86::AddrDisp)
+      MIB.addDisp(MI.getOperand(MemOpndSlot + i), LabelOffset);
+    else
+      MIB.add(MI.getOperand(MemOpndSlot + i));
+  }
+  if (!UseImmLabel)
+    MIB.addReg(LabelReg);
+  else
+    MIB.addMBB(restoreMBB);
+  MIB.setMemRefs(MMOs);
+
+  // Store FP to buf[0] and SP to buf[2].
+  const X86RegisterInfo *RegInfo = Subtarget.getRegisterInfo();
+  unsigned RegStoreOpc = (PVT == MVT::i64) ? X86::MOV64mr : X86::MOV32mr;
+
+  bool HasFP = Subtarget.getFrameLowering()->hasFP(*MF);
+  if (HasFP) {
+    MIB = BuildMI(*thisMBB, MI, MIMD, TII->get(RegStoreOpc));
+    for (unsigned i = 0; i < X86::AddrNumOperands; ++i)
+      MIB.add(MI.getOperand(MemOpndSlot + i));
+    MIB.addReg(RegInfo->getFrameRegister(*MF));
+    MIB.setMemRefs(MMOs);
+  }
+
+  const int64_t SPOffset = 2 * PVT.getStoreSize();
+  MIB = BuildMI(*thisMBB, MI, MIMD, TII->get(RegStoreOpc));
+  for (unsigned i = 0; i < X86::AddrNumOperands; ++i) {
+    if (i == X86::AddrDisp)
+      MIB.addDisp(MI.getOperand(MemOpndSlot + i), SPOffset);
+    else
+      MIB.add(MI.getOperand(MemOpndSlot + i));
+  }
+  MIB.addReg(RegInfo->getStackRegister());
+  MIB.setMemRefs(MMOs);
+
+  if (MF->getFunction().getParent()->getModuleFlag("cf-protection-return")) {
+    emitSetJmpShadowStackFix(MI, thisMBB);
+  }
+
+  // Setup
+  MIB = BuildMI(*thisMBB, MI, MIMD, TII->get(X86::EH_SjLj_Setup))
+            .addMBB(restoreMBB);
+
+  MIB.addRegMask(RegInfo->getNoPreservedMask());
+  thisMBB->addSuccessor(mainMBB);
+  thisMBB->addSuccessor(restoreMBB);
+
+  // mainMBB:
+  BuildMI(mainMBB, MIMD, TII->get(X86::MOV32r0), mainDstReg);
+  mainMBB->addSuccessor(sinkMBB);
+
+  // sinkMBB:
+  BuildMI(*sinkMBB, sinkMBB->begin(), MIMD, TII->get(X86::PHI), DstReg)
+      .addReg(mainDstReg)
+      .addMBB(mainMBB)
+      .addReg(restoreDstReg)
+      .addMBB(restoreMBB);
+
+  // restoreMBB:
+  if (RegInfo->hasBasePointer(*MF)) {
+    const bool Uses64BitFramePtr = Subtarget.isTarget64BitLP64();
+    X86MachineFunctionInfo *X86FI = MF->getInfo<X86MachineFunctionInfo>();
+    X86FI->setRestoreBasePointer(MF);
+    Register FramePtr = RegInfo->getFrameRegister(*MF);
+    Register BasePtr = RegInfo->getBaseRegister();
+    unsigned Opm = Uses64BitFramePtr ? X86::MOV64rm : X86::MOV32rm;
+    addRegOffset(BuildMI(restoreMBB, MIMD, TII->get(Opm), BasePtr), FramePtr,
+                 true, X86FI->getRestoreBasePointerOffset())
+        .setMIFlag(MachineInstr::FrameSetup);
   }
   BuildMI(restoreMBB, MIMD, TII->get(X86::MOV32ri), restoreDstReg).addImm(1);
   BuildMI(restoreMBB, MIMD, TII->get(X86::JMP_1)).addMBB(sinkMBB);
@@ -38407,6 +38578,10 @@ X86TargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
   case X86::EH_SjLj_SetJmp32:
   case X86::EH_SjLj_SetJmp64:
     return emitEHSjLjSetJmp(MI, BB);
+
+  case X86::SetJmp32:
+  case X86::SetJmp64:
+    return emitSetJmp(MI, BB);
 
   case X86::EH_SjLj_LongJmp32:
   case X86::EH_SjLj_LongJmp64:

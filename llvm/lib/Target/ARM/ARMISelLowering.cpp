@@ -1195,6 +1195,7 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM_,
   // We want to custom lower some of our intrinsics.
   setOperationAction(ISD::INTRINSIC_WO_CHAIN, MVT::Other, Custom);
   setOperationAction(ISD::EH_SJLJ_SETJMP, MVT::i32, Custom);
+  setOperationAction(ISD::SETJMP, MVT::i32, Custom);
   setOperationAction(ISD::EH_SJLJ_LONGJMP, MVT::Other, Custom);
   setOperationAction(ISD::EH_SJLJ_SETUP_DISPATCH, MVT::Other, Custom);
 
@@ -3774,6 +3775,33 @@ ARMTargetLowering::LowerEH_SJLJ_SETJMP(SDValue Op, SelectionDAG &DAG) const {
   return DAG.getNode(ARMISD::EH_SJLJ_SETJMP, dl,
                      DAG.getVTList(MVT::i32, MVT::Other), Op.getOperand(0),
                      Op.getOperand(1), Val);
+}
+
+SDValue ARMTargetLowering::LowerSETJMP(SDValue Op, SelectionDAG &DAG) const {
+  SDLoc dl(Op);
+  SDValue Chain = Op.getOperand(0);
+  SDValue Buf = Op.getOperand(1);
+
+  MachineFunction &MF = DAG.getMachineFunction();
+  EVT PtrVT = getPointerTy(DAG.getDataLayout());
+
+  // Store FP into buf[0].
+  const ARMBaseRegisterInfo &ARI =
+      *static_cast<const ARMBaseRegisterInfo *>(Subtarget->getRegisterInfo());
+  Register FrameReg = ARI.getFrameRegister(MF);
+  SDValue FP = DAG.getCopyFromReg(Chain, dl, FrameReg, PtrVT);
+  Chain = DAG.getStore(FP.getValue(1), dl, FP, Buf, MachinePointerInfo());
+
+  // Store SP into buf[2] (offset 8).
+  SDValue SP = DAG.getCopyFromReg(Chain, dl, ARM::SP, PtrVT);
+  SDValue SPAddr =
+      DAG.getNode(ISD::ADD, dl, PtrVT, Buf, DAG.getConstant(8, dl, PtrVT));
+  Chain = DAG.getStore(SP.getValue(1), dl, SP, SPAddr, MachinePointerInfo());
+
+  // Delegate to EH_SJLJ_SETJMP for IP store + return value.
+  SDValue Val = DAG.getConstant(0, dl, MVT::i32);
+  return DAG.getNode(ARMISD::EH_SJLJ_SETJMP, dl,
+                     DAG.getVTList(MVT::i32, MVT::Other), Chain, Buf, Val);
 }
 
 SDValue
@@ -10434,7 +10462,10 @@ SDValue ARMTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::FCOPYSIGN:     return LowerFCOPYSIGN(Op, DAG);
   case ISD::RETURNADDR:    return LowerRETURNADDR(Op, DAG);
   case ISD::FRAMEADDR:     return LowerFRAMEADDR(Op, DAG);
-  case ISD::EH_SJLJ_SETJMP: return LowerEH_SJLJ_SETJMP(Op, DAG);
+  case ISD::EH_SJLJ_SETJMP:
+    return LowerEH_SJLJ_SETJMP(Op, DAG);
+  case ISD::SETJMP:
+    return LowerSETJMP(Op, DAG);
   case ISD::EH_SJLJ_LONGJMP: return LowerEH_SJLJ_LONGJMP(Op, DAG);
   case ISD::EH_SJLJ_SETUP_DISPATCH: return LowerEH_SJLJ_SETUP_DISPATCH(Op, DAG);
   case ISD::INTRINSIC_VOID: return LowerINTRINSIC_VOID(Op, DAG, Subtarget);
