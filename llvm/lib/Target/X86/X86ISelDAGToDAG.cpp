@@ -3035,7 +3035,6 @@ bool X86DAGToDAGISel::selectAddr(SDNode *Parent, SDValue N, SDValue &Base,
       Parent->getOpcode() != X86ISD::ENQCMD &&         // Fixme
       Parent->getOpcode() != X86ISD::ENQCMDS &&        // Fixme
       Parent->getOpcode() != X86ISD::EH_SJLJ_SETJMP && // setjmp
-      Parent->getOpcode() != X86ISD::SETJMP &&         // setjmp
       Parent->getOpcode() != X86ISD::EH_SJLJ_LONGJMP) { // longjmp
     unsigned AddrSpace =
       cast<MemSDNode>(Parent)->getPointerInfo().getAddrSpace();

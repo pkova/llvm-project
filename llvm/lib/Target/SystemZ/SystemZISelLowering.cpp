@@ -808,7 +808,6 @@ SystemZTargetLowering::SystemZTargetLowering(const TargetMachine &TM,
   // We're not using SJLJ for exception handling, but they're implemented
   // solely to support use of __builtin_setjmp / __builtin_longjmp.
   setOperationAction(ISD::EH_SJLJ_SETJMP, MVT::i32, Custom);
-  setOperationAction(ISD::SETJMP, MVT::i32, Custom);
   setOperationAction(ISD::EH_SJLJ_LONGJMP, MVT::Other, Custom);
 
   // We want to use MVC in preference to even a single load/store pair.
@@ -1180,14 +1179,6 @@ SystemZTargetLowering::emitEHSjLjSetJmp(MachineInstr &MI,
   MI.eraseFromParent();
 
   return SinkMBB;
-}
-
-MachineBasicBlock *
-SystemZTargetLowering::emitSetJmp(MachineInstr &MI,
-                                  MachineBasicBlock *MBB) const {
-  // emitSetJmp is identical to emitEHSjLjSetJmp because the SystemZ
-  // implementation of emitEHSjLjSetJmp already stores FP, SP, and IP
-  return emitEHSjLjSetJmp(MI, MBB);
 }
 
 MachineBasicBlock *
@@ -7307,7 +7298,6 @@ SDValue SystemZTargetLowering::LowerOperation(SDValue Op,
   case ISD::READCYCLECOUNTER:
     return lowerREADCYCLECOUNTER(Op, DAG);
   case ISD::EH_SJLJ_SETJMP:
-  case ISD::SETJMP:
   case ISD::EH_SJLJ_LONGJMP:
     // These operations are legal on our platform, but we cannot actually
     // set the operation action to Legal as common code would treat this
@@ -11202,8 +11192,6 @@ MachineBasicBlock *SystemZTargetLowering::EmitInstrWithCustomInserter(
     return emitProbedAlloca(MI, MBB);
   case SystemZ::EH_SjLj_SetJmp:
     return emitEHSjLjSetJmp(MI, MBB);
-  case SystemZ::SetJmp:
-    return emitSetJmp(MI, MBB);
   case SystemZ::EH_SjLj_LongJmp:
     return emitEHSjLjLongJmp(MI, MBB);
 

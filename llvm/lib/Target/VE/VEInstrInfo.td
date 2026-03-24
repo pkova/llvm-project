@@ -465,10 +465,6 @@ def VEeh_sjlj_setjmp: SDNode<"VEISD::EH_SJLJ_SETJMP",
                              SDTypeProfile<1, 1, [SDTCisInt<0>,
                                                   SDTCisPtrTy<1>]>,
                              [SDNPHasChain, SDNPSideEffect]>;
-def VEsetjmp: SDNode<"VEISD::SETJMP",
-                     SDTypeProfile<1, 1, [SDTCisInt<0>,
-                                          SDTCisPtrTy<1>]>,
-                     [SDNPHasChain, SDNPSideEffect]>;
 def VEeh_sjlj_longjmp: SDNode<"VEISD::EH_SJLJ_LONGJMP",
                               SDTypeProfile<0, 1, [SDTCisPtrTy<0>]>,
                               [SDNPHasChain, SDNPSideEffect]>;
@@ -1921,9 +1917,6 @@ let hasSideEffects = 1, isBarrier = 1, isCodeGenOnly = 1,
   def EH_SjLj_SetJmp  : Pseudo<(outs I32:$dst), (ins I64:$buf),
                                "# EH_SJLJ_SETJMP",
                                [(set I32:$dst, (VEeh_sjlj_setjmp I64:$buf))]>;
-  def SetJmp           : Pseudo<(outs I32:$dst), (ins I64:$buf),
-                               "# SETJMP",
-                               [(set I32:$dst, (VEsetjmp I64:$buf))]>;
 
   def EH_SjLj_Setup_Dispatch : Pseudo<(outs), (ins), "# EH_SJLJ_SETUP_DISPATCH",
                                       [(VEeh_sjlj_setup_dispatch)]>;

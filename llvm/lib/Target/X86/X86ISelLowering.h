@@ -823,7 +823,6 @@ namespace llvm {
                                             ISD::ArgFlagsTy Flags) const;
     SDValue LowerEH_RETURN(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerEH_SJLJ_SETJMP(SDValue Op, SelectionDAG &DAG) const;
-    SDValue lowerSETJMP(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerEH_SJLJ_LONGJMP(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerEH_SJLJ_SETUP_DISPATCH(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerINIT_TRAMPOLINE(SDValue Op, SelectionDAG &DAG) const;
@@ -929,8 +928,6 @@ namespace llvm {
 
     MachineBasicBlock *emitEHSjLjSetJmp(MachineInstr &MI,
                                         MachineBasicBlock *MBB) const;
-    MachineBasicBlock *emitSetJmp(MachineInstr &MI,
-                                  MachineBasicBlock *MBB) const;
 
     void emitSetJmpShadowStackFix(MachineInstr &MI,
                                   MachineBasicBlock *MBB) const;

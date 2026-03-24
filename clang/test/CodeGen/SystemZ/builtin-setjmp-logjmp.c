@@ -6,7 +6,7 @@ void *buf[20];
 // CHECK-LABEL: define dso_local void @foo(
 // CHECK-SAME: ) #[[ATTR0:[0-9]+]] {
 // CHECK-NEXT:  [[ENTRY:.*:]]
-// CHECK-NEXT:    [[TMP0:%.*]] = call i32 @llvm.setjmp(ptr @buf)
+// CHECK-NEXT:    [[TMP0:%.*]] = call i32 @llvm.eh.sjlj.setjmp(ptr @buf)
 // CHECK-NEXT:    ret void
 //
 void foo()

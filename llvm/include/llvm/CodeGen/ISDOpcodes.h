@@ -161,12 +161,6 @@ enum NodeType {
   /// and returns an outchain.
   EH_SJLJ_SETJMP,
 
-  /// RESULT, OUTCHAIN = SETJMP(INCHAIN, buffer)
-  /// This corresponds to the setjmp intrinsic. Like EH_SJLJ_SETJMP but the
-  /// backend is responsible for storing all of FP, SP, and IP into the buffer
-  /// (the frontend does not emit any buffer stores).
-  SETJMP,
-
   /// OUTCHAIN = EH_SJLJ_LONGJMP(INCHAIN, buffer)
   /// This corresponds to the eh.sjlj.longjmp intrinsic.
   /// It takes an input chain and a pointer to the jump buffer as inputs

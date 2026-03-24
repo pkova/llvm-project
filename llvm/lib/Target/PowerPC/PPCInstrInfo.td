@@ -590,10 +590,6 @@ def PPCeh_sjlj_setjmp  : SDNode<"PPCISD::EH_SJLJ_SETJMP",
                                 SDTypeProfile<1, 1, [SDTCisInt<0>,
                                                      SDTCisPtrTy<1>]>,
                                 [SDNPHasChain, SDNPSideEffect]>;
-def PPCsetjmp          : SDNode<"PPCISD::SETJMP",
-                                SDTypeProfile<1, 1, [SDTCisInt<0>,
-                                                     SDTCisPtrTy<1>]>,
-                                [SDNPHasChain, SDNPSideEffect]>;
 
 // EH_SJLJ_LONGJMP - SjLj exception handling longjmp.
 def PPCeh_sjlj_longjmp : SDNode<"PPCISD::EH_SJLJ_LONGJMP",
@@ -1899,16 +1895,11 @@ def TAILBA   : IForm<18, 0, 0, (outs), (ins abscalltarget:$LI),
 // While longjmp is a control-flow barrier (fallthrough isn't allowed), setjmp
 // is not.
 let hasSideEffects = 1 in {
-  let Defs = [CTR] in {
+  let Defs = [CTR] in
   def EH_SjLj_SetJmp32  : PPCCustomInserterPseudo<(outs gprc:$dst), (ins memr:$buf),
                             "#EH_SJLJ_SETJMP32",
                             [(set i32:$dst, (PPCeh_sjlj_setjmp addr:$buf))]>,
                           Requires<[IsPPC32]>;
-  def SetJmp32           : PPCCustomInserterPseudo<(outs gprc:$dst), (ins memr:$buf),
-                            "#SETJMP32",
-                            [(set i32:$dst, (PPCsetjmp addr:$buf))]>,
-                          Requires<[IsPPC32]>;
-  }
 }
 
 let hasSideEffects = 1, isBarrier = 1 in {

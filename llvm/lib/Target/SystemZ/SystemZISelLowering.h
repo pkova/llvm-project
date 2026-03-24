@@ -115,7 +115,6 @@ public:
   }
   MachineBasicBlock *emitEHSjLjSetJmp(MachineInstr &MI,
                                       MachineBasicBlock *MBB) const;
-  MachineBasicBlock *emitSetJmp(MachineInstr &MI, MachineBasicBlock *MBB) const;
 
   MachineBasicBlock *emitEHSjLjLongJmp(MachineInstr &MI,
                                        MachineBasicBlock *MBB) const;

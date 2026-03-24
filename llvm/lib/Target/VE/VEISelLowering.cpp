@@ -298,7 +298,6 @@ void VETargetLowering::initSPUActions() {
   /// SJLJ instructions {
   setOperationAction(ISD::EH_SJLJ_LONGJMP, MVT::Other, Custom);
   setOperationAction(ISD::EH_SJLJ_SETJMP, MVT::i32, Custom);
-  setOperationAction(ISD::SETJMP, MVT::i32, Custom);
   setOperationAction(ISD::EH_SJLJ_SETUP_DISPATCH, MVT::Other, Custom);
   /// } SJLJ instructions
 
@@ -1664,12 +1663,6 @@ SDValue VETargetLowering::lowerEH_SJLJ_SETJMP(SDValue Op,
                      Op.getOperand(1));
 }
 
-SDValue VETargetLowering::lowerSETJMP(SDValue Op, SelectionDAG &DAG) const {
-  SDLoc DL(Op);
-  return DAG.getNode(VEISD::SETJMP, DL, DAG.getVTList(MVT::i32, MVT::Other),
-                     Op.getOperand(0), Op.getOperand(1));
-}
-
 SDValue VETargetLowering::lowerEH_SJLJ_SETUP_DISPATCH(SDValue Op,
                                                       SelectionDAG &DAG) const {
   SDLoc DL(Op);
@@ -1840,8 +1833,6 @@ SDValue VETargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
     return lowerEH_SJLJ_LONGJMP(Op, DAG);
   case ISD::EH_SJLJ_SETJMP:
     return lowerEH_SJLJ_SETJMP(Op, DAG);
-  case ISD::SETJMP:
-    return lowerSETJMP(Op, DAG);
   case ISD::EH_SJLJ_SETUP_DISPATCH:
     return lowerEH_SJLJ_SETUP_DISPATCH(Op, DAG);
   case ISD::FRAMEADDR:
@@ -2169,121 +2160,6 @@ VETargetLowering::emitEHSjLjSetJmp(MachineInstr &MI,
   //   %s17 = buf[3] = iff %s17 is used as BP
   //   v_restore = 1
   //   goto SinkMBB
-
-  MachineBasicBlock *ThisMBB = MBB;
-  MachineBasicBlock *MainMBB = MF->CreateMachineBasicBlock(BB);
-  MachineBasicBlock *SinkMBB = MF->CreateMachineBasicBlock(BB);
-  MachineBasicBlock *RestoreMBB = MF->CreateMachineBasicBlock(BB);
-  MF->insert(I, MainMBB);
-  MF->insert(I, SinkMBB);
-  MF->push_back(RestoreMBB);
-  RestoreMBB->setMachineBlockAddressTaken();
-
-  // Transfer the remainder of BB and its successor edges to SinkMBB.
-  SinkMBB->splice(SinkMBB->begin(), MBB,
-                  std::next(MachineBasicBlock::iterator(MI)), MBB->end());
-  SinkMBB->transferSuccessorsAndUpdatePHIs(MBB);
-
-  // ThisMBB:
-  Register LabelReg =
-      prepareMBB(*MBB, MachineBasicBlock::iterator(MI), RestoreMBB, DL);
-
-  // Store BP in buf[3] iff this function is using BP.
-  const VEFrameLowering *TFI = Subtarget->getFrameLowering();
-  if (TFI->hasBP(*MF)) {
-    MachineInstrBuilder MIB = BuildMI(*MBB, MI, DL, TII->get(VE::STrii));
-    MIB.addReg(BufReg);
-    MIB.addImm(0);
-    MIB.addImm(24);
-    MIB.addReg(VE::SX17);
-    MIB.setMemRefs(MMOs);
-  }
-
-  // Store IP in buf[1].
-  MachineInstrBuilder MIB = BuildMI(*MBB, MI, DL, TII->get(VE::STrii));
-  MIB.add(MI.getOperand(1)); // we can preserve the kill flags here.
-  MIB.addImm(0);
-  MIB.addImm(8);
-  MIB.addReg(LabelReg, getKillRegState(true));
-  MIB.setMemRefs(MMOs);
-
-  // SP/FP are already stored in jmpbuf before `llvm.eh.sjlj.setjmp`.
-
-  // Insert setup.
-  MIB =
-      BuildMI(*ThisMBB, MI, DL, TII->get(VE::EH_SjLj_Setup)).addMBB(RestoreMBB);
-
-  const VERegisterInfo *RegInfo = Subtarget->getRegisterInfo();
-  MIB.addRegMask(RegInfo->getNoPreservedMask());
-  ThisMBB->addSuccessor(MainMBB);
-  ThisMBB->addSuccessor(RestoreMBB);
-
-  // MainMBB:
-  BuildMI(MainMBB, DL, TII->get(VE::LEAzii), MainDestReg)
-      .addImm(0)
-      .addImm(0)
-      .addImm(0);
-  MainMBB->addSuccessor(SinkMBB);
-
-  // SinkMBB:
-  BuildMI(*SinkMBB, SinkMBB->begin(), DL, TII->get(VE::PHI), DstReg)
-      .addReg(MainDestReg)
-      .addMBB(MainMBB)
-      .addReg(RestoreDestReg)
-      .addMBB(RestoreMBB);
-
-  // RestoreMBB:
-  // Restore BP from buf[3] iff this function is using BP.  The address of
-  // buf is in SX10.
-  // FIXME: Better to not use SX10 here
-  if (TFI->hasBP(*MF)) {
-    MachineInstrBuilder MIB =
-        BuildMI(RestoreMBB, DL, TII->get(VE::LDrii), VE::SX17);
-    MIB.addReg(VE::SX10);
-    MIB.addImm(0);
-    MIB.addImm(24);
-    MIB.setMemRefs(MMOs);
-  }
-  BuildMI(RestoreMBB, DL, TII->get(VE::LEAzii), RestoreDestReg)
-      .addImm(0)
-      .addImm(0)
-      .addImm(1);
-  BuildMI(RestoreMBB, DL, TII->get(VE::BRCFLa_t)).addMBB(SinkMBB);
-  RestoreMBB->addSuccessor(SinkMBB);
-
-  MI.eraseFromParent();
-  return SinkMBB;
-}
-
-MachineBasicBlock *VETargetLowering::emitSetJmp(MachineInstr &MI,
-                                                MachineBasicBlock *MBB) const {
-  DebugLoc DL = MI.getDebugLoc();
-  MachineFunction *MF = MBB->getParent();
-  const TargetInstrInfo *TII = Subtarget->getInstrInfo();
-  const TargetRegisterInfo *TRI = Subtarget->getRegisterInfo();
-  MachineRegisterInfo &MRI = MF->getRegInfo();
-
-  const BasicBlock *BB = MBB->getBasicBlock();
-  MachineFunction::iterator I = ++MBB->getIterator();
-
-  // Memory Reference.
-  SmallVector<MachineMemOperand *, 2> MMOs(MI.memoperands());
-  Register BufReg = MI.getOperand(1).getReg();
-
-  Register DstReg;
-
-  DstReg = MI.getOperand(0).getReg();
-  const TargetRegisterClass *RC = MRI.getRegClass(DstReg);
-  assert(TRI->isTypeLegalForClass(*RC, MVT::i32) && "Invalid destination!");
-  (void)TRI;
-  Register MainDestReg = MRI.createVirtualRegister(RC);
-  Register RestoreDestReg = MRI.createVirtualRegister(RC);
-
-  // Buffer layout:
-  //   buf[0] = Frame Pointer (SX9, offset 0)
-  //   buf[1] = IP (offset 8)
-  //   buf[2] = Stack Pointer (SX11, offset 16)
-  //   buf[3] = Base Pointer (SX17, offset 24)
 
   MachineBasicBlock *ThisMBB = MBB;
   MachineBasicBlock *MainMBB = MF->CreateMachineBasicBlock(BB);
@@ -2768,8 +2644,6 @@ VETargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
     return emitEHSjLjLongJmp(MI, BB);
   case VE::EH_SjLj_SetJmp:
     return emitEHSjLjSetJmp(MI, BB);
-  case VE::SetJmp:
-    return emitSetJmp(MI, BB);
   case VE::EH_SjLj_Setup_Dispatch:
     return emitSjLjDispatchBlock(MI, BB);
   }

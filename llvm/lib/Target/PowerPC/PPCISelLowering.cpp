@@ -601,7 +601,6 @@ PPCTargetLowering::PPCTargetLowering(const PPCTargetMachine &TM,
   // your own exception handling based on them.
   // LLVM/Clang supports zero-cost DWARF exception handling.
   setOperationAction(ISD::EH_SJLJ_SETJMP, MVT::i32, Custom);
-  setOperationAction(ISD::SETJMP, MVT::i32, Custom);
   setOperationAction(ISD::EH_SJLJ_LONGJMP, MVT::Other, Custom);
 
   // We want to legalize GlobalAddress and ConstantPool nodes into the
@@ -7986,12 +7985,6 @@ SDValue PPCTargetLowering::lowerEH_SJLJ_SETJMP(SDValue Op,
                      Op.getOperand(0), Op.getOperand(1));
 }
 
-SDValue PPCTargetLowering::lowerSETJMP(SDValue Op, SelectionDAG &DAG) const {
-  SDLoc DL(Op);
-  return DAG.getNode(PPCISD::SETJMP, DL, DAG.getVTList(MVT::i32, MVT::Other),
-                     Op.getOperand(0), Op.getOperand(1));
-}
-
 SDValue PPCTargetLowering::lowerEH_SJLJ_LONGJMP(SDValue Op,
                                                 SelectionDAG &DAG) const {
   SDLoc DL(Op);
@@ -12751,10 +12744,7 @@ SDValue PPCTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
 
   // Exception handling lowering.
   case ISD::EH_DWARF_CFA:       return LowerEH_DWARF_CFA(Op, DAG);
-  case ISD::EH_SJLJ_SETJMP:
-    return lowerEH_SJLJ_SETJMP(Op, DAG);
-  case ISD::SETJMP:
-    return lowerSETJMP(Op, DAG);
+  case ISD::EH_SJLJ_SETJMP:     return lowerEH_SJLJ_SETJMP(Op, DAG);
   case ISD::EH_SJLJ_LONGJMP:    return lowerEH_SJLJ_LONGJMP(Op, DAG);
 
   case ISD::LOAD:               return LowerLOAD(Op, DAG);
@@ -13496,19 +13486,17 @@ PPCTargetLowering::emitEHSjLjSetJmp(MachineInstr &MI,
                   std::next(MachineBasicBlock::iterator(MI)), MBB->end());
   sinkMBB->transferSuccessorsAndUpdatePHIs(MBB);
 
-  // Note that the structure of the jmp_buf used here is not compatible
-  // with that used by libc, and is not designed to be. Specifically, it
-  // stores only those 'reserved' registers that LLVM does not otherwise
-  // understand how to spill. Also, by convention, by the time this
-  // intrinsic is called, Clang has already stored the frame address in the
-  // first slot of the buffer and stack address in the third. Following the
-  // X86 target code, we'll store the jump address in the second slot. We also
-  // need to save the TOC pointer (R2) to handle jumps between shared
-  // libraries, and that will be stored in the fourth slot. The thread
-  // identifier (R13) is not affected.
+  // Buffer layout:
+  //   buf[0] = Frame Pointer
+  //   buf[1] = IP (return address / LR)
+  //   buf[2] = Stack Pointer
+  //   buf[3] = TOC pointer (R2, 64-bit ELF only)
+  //   buf[4] = Base Pointer
 
   // thisMBB:
+  const int64_t FPOffset    = 0;
   const int64_t LabelOffset = 1 * PVT.getStoreSize();
+  const int64_t SPOffset    = 2 * PVT.getStoreSize();
   const int64_t TOCOffset   = 3 * PVT.getStoreSize();
   const int64_t BPOffset    = 4 * PVT.getStoreSize();
 
@@ -13517,6 +13505,32 @@ PPCTargetLowering::emitEHSjLjSetJmp(MachineInstr &MI,
   Register LabelReg = MRI.createVirtualRegister(PtrRC);
   Register BufReg = MI.getOperand(1).getReg();
 
+  unsigned SP = (PVT == MVT::i64) ? PPC::X1 : PPC::R1;
+
+  // Store FP to buf[0] if we have a frame pointer.
+  // Note: hasFP() is unreliable here because it depends on getStackSize()
+  // which isn't known yet during ISel. Use needsFP() instead.
+  auto *TFI =
+      static_cast<const PPCFrameLowering *>(Subtarget.getFrameLowering());
+  if (TFI->needsFP(*MF)) {
+    unsigned FP = (PVT == MVT::i64) ? PPC::X31 : PPC::R31;
+    MIB = BuildMI(*thisMBB, MI, DL,
+                  TII->get(Subtarget.isPPC64() ? PPC::STD : PPC::STW))
+              .addReg(FP)
+              .addImm(FPOffset)
+              .addReg(BufReg)
+              .cloneMemRefs(MI);
+  }
+
+  // Store SP to buf[2].
+  MIB = BuildMI(*thisMBB, MI, DL,
+                TII->get(Subtarget.isPPC64() ? PPC::STD : PPC::STW))
+            .addReg(SP)
+            .addImm(SPOffset)
+            .addReg(BufReg)
+            .cloneMemRefs(MI);
+
+  // Store TOC (R2) for 64-bit ELF.
   if (Subtarget.is64BitELFABI()) {
     setUsesTOCBasePtr(*MBB->getParent());
     MIB = BuildMI(*thisMBB, MI, DL, TII->get(PPC::STD))
@@ -13582,151 +13596,6 @@ PPCTargetLowering::emitEHSjLjSetJmp(MachineInstr &MI,
           TII->get(PPC::PHI), DstReg)
     .addReg(mainDstReg).addMBB(mainMBB)
     .addReg(restoreDstReg).addMBB(thisMBB);
-
-  MI.eraseFromParent();
-  return sinkMBB;
-}
-
-MachineBasicBlock *PPCTargetLowering::emitSetJmp(MachineInstr &MI,
-                                                 MachineBasicBlock *MBB) const {
-  DebugLoc DL = MI.getDebugLoc();
-  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
-  const PPCRegisterInfo *TRI = Subtarget.getRegisterInfo();
-
-  MachineFunction *MF = MBB->getParent();
-  MachineRegisterInfo &MRI = MF->getRegInfo();
-
-  const BasicBlock *BB = MBB->getBasicBlock();
-  MachineFunction::iterator I = ++MBB->getIterator();
-
-  Register DstReg = MI.getOperand(0).getReg();
-  const TargetRegisterClass *RC = MRI.getRegClass(DstReg);
-  assert(TRI->isTypeLegalForClass(*RC, MVT::i32) && "Invalid destination!");
-  Register mainDstReg = MRI.createVirtualRegister(RC);
-  Register restoreDstReg = MRI.createVirtualRegister(RC);
-
-  MVT PVT = getPointerTy(MF->getDataLayout());
-  assert((PVT == MVT::i64 || PVT == MVT::i32) && "Invalid Pointer Size!");
-
-  MachineBasicBlock *thisMBB = MBB;
-  MachineBasicBlock *mainMBB = MF->CreateMachineBasicBlock(BB);
-  MachineBasicBlock *sinkMBB = MF->CreateMachineBasicBlock(BB);
-  MF->insert(I, mainMBB);
-  MF->insert(I, sinkMBB);
-
-  MachineInstrBuilder MIB;
-
-  // Transfer the remainder of BB and its successor edges to sinkMBB.
-  sinkMBB->splice(sinkMBB->begin(), MBB,
-                  std::next(MachineBasicBlock::iterator(MI)), MBB->end());
-  sinkMBB->transferSuccessorsAndUpdatePHIs(MBB);
-
-  // Buffer layout:
-  //   buf[0] = Frame Pointer
-  //   buf[1] = IP (return address / LR)
-  //   buf[2] = Stack Pointer
-  //   buf[3] = TOC pointer (R2, 64-bit ELF only)
-  //   buf[4] = Base Pointer
-  const int64_t FPOffset = 0;
-  const int64_t LabelOffset = 1 * PVT.getStoreSize();
-  const int64_t SPOffset = 2 * PVT.getStoreSize();
-  const int64_t TOCOffset = 3 * PVT.getStoreSize();
-  const int64_t BPOffset = 4 * PVT.getStoreSize();
-
-  const TargetRegisterClass *PtrRC = getRegClassFor(PVT);
-  Register LabelReg = MRI.createVirtualRegister(PtrRC);
-  Register BufReg = MI.getOperand(1).getReg();
-
-  unsigned SP = (PVT == MVT::i64) ? PPC::X1 : PPC::R1;
-
-  // Store FP to buf[0] if we have a frame pointer.
-  // Note: hasFP() is unreliable here because it depends on getStackSize()
-  // which isn't known yet during ISel. Use needsFP() instead.
-  auto *TFI =
-      static_cast<const PPCFrameLowering *>(Subtarget.getFrameLowering());
-  if (TFI->needsFP(*MF)) {
-    unsigned FP = (PVT == MVT::i64) ? PPC::X31 : PPC::R31;
-    MIB = BuildMI(*thisMBB, MI, DL,
-                  TII->get(Subtarget.isPPC64() ? PPC::STD : PPC::STW))
-              .addReg(FP)
-              .addImm(FPOffset)
-              .addReg(BufReg)
-              .cloneMemRefs(MI);
-  }
-
-  // Store SP to buf[2].
-  MIB = BuildMI(*thisMBB, MI, DL,
-                TII->get(Subtarget.isPPC64() ? PPC::STD : PPC::STW))
-            .addReg(SP)
-            .addImm(SPOffset)
-            .addReg(BufReg)
-            .cloneMemRefs(MI);
-
-  // Store TOC (R2) for 64-bit ELF.
-  if (Subtarget.is64BitELFABI()) {
-    setUsesTOCBasePtr(*MBB->getParent());
-    MIB = BuildMI(*thisMBB, MI, DL, TII->get(PPC::STD))
-              .addReg(PPC::X2)
-              .addImm(TOCOffset)
-              .addReg(BufReg)
-              .cloneMemRefs(MI);
-  }
-
-  // Store BP.
-  unsigned BaseReg;
-  if (MF->getFunction().hasFnAttribute(Attribute::Naked))
-    BaseReg = Subtarget.isPPC64() ? PPC::X1 : PPC::R1;
-  else
-    BaseReg = Subtarget.isPPC64() ? PPC::BP8 : PPC::BP;
-
-  MIB = BuildMI(*thisMBB, MI, DL,
-                TII->get(Subtarget.isPPC64() ? PPC::STD : PPC::STW))
-            .addReg(BaseReg)
-            .addImm(BPOffset)
-            .addReg(BufReg)
-            .cloneMemRefs(MI);
-
-  // Setup
-  MIB = BuildMI(*thisMBB, MI, DL, TII->get(PPC::BCLalways)).addMBB(mainMBB);
-  MIB.addRegMask(TRI->getNoPreservedMask());
-
-  BuildMI(*thisMBB, MI, DL, TII->get(PPC::LI), restoreDstReg).addImm(1);
-
-  MIB = BuildMI(*thisMBB, MI, DL, TII->get(PPC::EH_SjLj_Setup)).addMBB(mainMBB);
-  MIB = BuildMI(*thisMBB, MI, DL, TII->get(PPC::B)).addMBB(sinkMBB);
-
-  thisMBB->addSuccessor(mainMBB, BranchProbability::getZero());
-  thisMBB->addSuccessor(sinkMBB, BranchProbability::getOne());
-
-  // mainMBB:
-  //  mainDstReg = 0
-  MIB =
-      BuildMI(mainMBB, DL,
-              TII->get(Subtarget.isPPC64() ? PPC::MFLR8 : PPC::MFLR), LabelReg);
-
-  // Store IP
-  if (Subtarget.isPPC64()) {
-    MIB = BuildMI(mainMBB, DL, TII->get(PPC::STD))
-              .addReg(LabelReg)
-              .addImm(LabelOffset)
-              .addReg(BufReg);
-  } else {
-    MIB = BuildMI(mainMBB, DL, TII->get(PPC::STW))
-              .addReg(LabelReg)
-              .addImm(LabelOffset)
-              .addReg(BufReg);
-  }
-  MIB.cloneMemRefs(MI);
-
-  BuildMI(mainMBB, DL, TII->get(PPC::LI), mainDstReg).addImm(0);
-  mainMBB->addSuccessor(sinkMBB);
-
-  // sinkMBB:
-  BuildMI(*sinkMBB, sinkMBB->begin(), DL, TII->get(PPC::PHI), DstReg)
-      .addReg(mainDstReg)
-      .addMBB(mainMBB)
-      .addReg(restoreDstReg)
-      .addMBB(thisMBB);
 
   MI.eraseFromParent();
   return sinkMBB;
@@ -14085,9 +13954,6 @@ PPCTargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
   if (MI.getOpcode() == PPC::EH_SjLj_SetJmp32 ||
       MI.getOpcode() == PPC::EH_SjLj_SetJmp64) {
     return emitEHSjLjSetJmp(MI, BB);
-  } else if (MI.getOpcode() == PPC::SetJmp32 ||
-             MI.getOpcode() == PPC::SetJmp64) {
-    return emitSetJmp(MI, BB);
   } else if (MI.getOpcode() == PPC::EH_SjLj_LongJmp32 ||
              MI.getOpcode() == PPC::EH_SjLj_LongJmp64) {
     return emitEHSjLjLongJmp(MI, BB);

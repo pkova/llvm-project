@@ -4918,8 +4918,9 @@ RValue CodeGenFunction::EmitBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
   case Builtin::BI__builtin_setjmp: {
     Address Buf = EmitPointerWithAlignment(E->getArg(0));
 
-    // The backend handles all buffer stores (FP, SP, IP) via @llvm.setjmp.
-    Function *F = CGM.getIntrinsic(Intrinsic::setjmp);
+    // The backend handles all buffer stores (FP, SP, IP) via
+    // @llvm.eh.sjlj.setjmp.
+    Function *F = CGM.getIntrinsic(Intrinsic::eh_sjlj_setjmp);
     return RValue::get(Builder.CreateCall(F, Buf.emitRawPointer(*this)));
   }
   case Builtin::BI__builtin_longjmp: {

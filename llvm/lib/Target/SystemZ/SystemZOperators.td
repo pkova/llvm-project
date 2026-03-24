@@ -414,8 +414,6 @@ def z_tdc               : SDNode<"SystemZISD::TDC", SDT_ZTest>;
 
 def z_eh_sjlj_setjmp    : SDNode<"ISD::EH_SJLJ_SETJMP", SDT_ZSetJmp,
                                  [SDNPHasChain, SDNPSideEffect]>;
-def z_setjmp            : SDNode<"ISD::SETJMP", SDT_ZSetJmp,
-                                 [SDNPHasChain, SDNPSideEffect]>;
 def z_eh_sjlj_longjmp   : SDNode<"ISD::EH_SJLJ_LONGJMP", SDT_ZLongJmp,
                                  [SDNPHasChain, SDNPSideEffect]>;
 

@@ -506,16 +506,11 @@ def MFCR8 : XFXForm_3<31, 19, (outs g8rc:$RT), (ins),
 // While longjmp is a control-flow barrier (fallthrough isn't allowed), setjmp
 // is not.
 let hasSideEffects = 1 in {
-  let Defs = [CTR8] in {
+  let Defs = [CTR8] in
   def EH_SjLj_SetJmp64  : PPCCustomInserterPseudo<(outs gprc:$dst), (ins memr:$buf),
                             "#EH_SJLJ_SETJMP64",
                             [(set i32:$dst, (PPCeh_sjlj_setjmp addr:$buf))]>,
                           Requires<[IsPPC64]>;
-  def SetJmp64           : PPCCustomInserterPseudo<(outs gprc:$dst), (ins memr:$buf),
-                            "#SETJMP64",
-                            [(set i32:$dst, (PPCsetjmp addr:$buf))]>,
-                          Requires<[IsPPC64]>;
-  }
 }
 
 let hasSideEffects = 1, isBarrier = 1 in {

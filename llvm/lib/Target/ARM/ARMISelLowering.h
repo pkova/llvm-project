@@ -546,7 +546,6 @@ class VectorType;
                                             SDValue Dst,
                                             ISD::ArgFlagsTy Flags) const;
     SDValue LowerEH_SJLJ_SETJMP(SDValue Op, SelectionDAG &DAG) const;
-    SDValue LowerSETJMP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerEH_SJLJ_LONGJMP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerEH_SJLJ_SETUP_DISPATCH(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerINTRINSIC_VOID(SDValue Op, SelectionDAG &DAG,

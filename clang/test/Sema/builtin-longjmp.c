@@ -21,7 +21,7 @@ jmp_buf buf;
 // CHECK:   call{{.*}} void @llvm.eh.sjlj.longjmp
 
 // CHECK:   define{{.*}} void @do_setjmp()
-// CHECK:   call{{.*}} i32 @llvm.setjmp
+// CHECK:   call{{.*}} i32 @llvm.eh.sjlj.setjmp
 
 void do_jump(void) {
   __builtin_longjmp(buf, 1); // expected-error {{__builtin_longjmp is not supported for the current target}}
