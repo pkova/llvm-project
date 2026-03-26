@@ -119,6 +119,8 @@ Changes to the ARM Backend
 * The `r14` register can now be used as an alias for the link register `lr`
   in inline assembly. Clang always canonicalizes the name to `lr`, but other
   frontends may not.
+* The backend now stores the frame pointer and stack pointer into the jump buffer
+  when lowering `@llvm.eh.sjlj.setjmp`. This was previously handled by the frontend.
 
 Changes to the AVR Backend
 --------------------------
@@ -148,6 +150,9 @@ Changes to the NVPTX Backend
 Changes to the PowerPC Backend
 ------------------------------
 
+* The backend now stores the frame pointer and stack pointer into the jump buffer
+  when lowering `@llvm.eh.sjlj.setjmp`. This was previously handled by the frontend.
+
 Changes to the RISC-V Backend
 -----------------------------
 
@@ -168,6 +173,15 @@ Changes to the RISC-V Backend
   Reordering Structured Data) extension.
 * `-mcpu=sifive-x160` and `-mcpu=sifive-x180` were added.
 
+Changes to the SystemZ Backend
+-----------------------------
+
+Changes to the VE Backend
+-----------------------------
+
+* The backend now stores the frame pointer and stack pointer into the jump buffer
+  when lowering `@llvm.eh.sjlj.setjmp`. This was previously handled by the frontend.
+
 Changes to the WebAssembly Backend
 ----------------------------------
 
@@ -183,6 +197,8 @@ Changes to the X86 Backend
 * `.att_syntax` directive is now emitted for assembly files when AT&T syntax is
   in use. This matches the behaviour of Intel syntax and aids with
   compatibility when changing the default Clang syntax to the Intel syntax.
+* The backend now stores the frame pointer and stack pointer into the jump buffer
+  when lowering `@llvm.eh.sjlj.setjmp`. This was previously handled by the frontend.
 
 Changes to the OCaml bindings
 -----------------------------

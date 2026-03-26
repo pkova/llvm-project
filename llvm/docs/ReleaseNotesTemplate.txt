@@ -104,6 +104,12 @@ Changes to the PowerPC Backend
 Changes to the RISC-V Backend
 -----------------------------
 
+Changes to the SystemZ Backend
+-----------------------------
+
+Changes to the VE Backend
+-----------------------------
+
 Changes to the WebAssembly Backend
 ----------------------------------
 
