@@ -13494,11 +13494,11 @@ PPCTargetLowering::emitEHSjLjSetJmp(MachineInstr &MI,
   //   buf[4] = Base Pointer
 
   // thisMBB:
-  const int64_t FPOffset    = 0;
+  const int64_t FPOffset = 0;
   const int64_t LabelOffset = 1 * PVT.getStoreSize();
-  const int64_t SPOffset    = 2 * PVT.getStoreSize();
-  const int64_t TOCOffset   = 3 * PVT.getStoreSize();
-  const int64_t BPOffset    = 4 * PVT.getStoreSize();
+  const int64_t SPOffset = 2 * PVT.getStoreSize();
+  const int64_t TOCOffset = 3 * PVT.getStoreSize();
+  const int64_t BPOffset = 4 * PVT.getStoreSize();
 
   // Prepare IP either in reg.
   const TargetRegisterClass *PtrRC = getRegClassFor(PVT);
